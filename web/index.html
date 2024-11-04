@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FFTT</title>
+  </head>
+  <body>
+    <input type="file" id="fileInput" />
+    <button id="uploadButton">上传</button>
+  </body>
+</html>
+
+<script type="module">
+  import { cutFile } from "./js/cutFile.js";
+
+  document.querySelector("#uploadButton").addEventListener("click", uploadFile);
+
+  /**
+   * 上传文件
+   */
+  async function uploadFile() {
+    const fileInput = document.querySelector("#fileInput");
+    const file = fileInput.files[0];
+    if (!file) {
+      alert("请选择文件");
+      return;
+    }
+    const filename = file.name;
+    const uploadedChunks = await getUploadedChunks(filename);
+
+    let uploadedCount = uploadedChunks.length; // 计数已上传的切片
+
+    await cutFile(file, uploadedChunks, (chunk, numChunks) => {
+      if (chunk.isUploaded) {
+        return;
+      }
+
+      uploadChunk(filename, chunk.chunkIndex, chunk.chunkHash, chunk.chunkBlob).then(() => {
+        chunk.isUploaded = true;
+        uploadedCount++;
+        if (uploadedCount === numChunks) {
+          mergeChunks(filename);
+        }
+      });
+    });
+  }
+
+  /**
+   * 上传切片
+   */
+  async function uploadChunk(filename, chunkIndex, chunkHash, chunkBlob) {
+    const formData = new FormData();
+    formData.append("filename", filename);
+    formData.append("chunkIndex", chunkIndex);
+    formData.append("chunkHash", chunkHash);
+    formData.append("chunkBlob", chunkBlob);
+
+    const resp = await fetch("/file/upload", { method: "POST", body: formData });
+    const body = await resp.json();
+
+    if (body.status !== 200) {
+      console.log(`文件'${filename}'的切片'${chunkIndex}'上传失败!`);
+    }
+  }
+
+  /**
+   * 获取已经上传的切片
+   */
+  async function getUploadedChunks(filename) {
+    const resp = await fetch(`/file/uploadedChunks?filename=${filename}`, { method: "GET" });
+    return (await resp.json()).data;
+  }
+
+  /**
+   * 合并切片
+   */
+  async function mergeChunks(filename) {
+    const resp = await fetch("/file/merge", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ filename })
+    });
+
+    const body = await resp.json();
+
+    if (body.status !== 200) {
+      console.log(`文件'${filename}'合并失败!`);
+    }
+  }
+</script>
